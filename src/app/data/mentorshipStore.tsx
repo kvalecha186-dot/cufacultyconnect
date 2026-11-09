@@ -1,4 +1,14 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import {
+  isSupabaseConfigured,
+  getMentorshipRequests,
+  createMentorshipRequest,
+  acceptMentorshipRequest,
+  shareMeetingLinkSupabase,
+  completeMentorshipRequest,
+  submitSessionFeedbackSupabase,
+  subscribeToMentorshipChanges,
+} from '../services/supabase';
 
 export type RequestStatus = 'pending' | 'assigned' | 'completed';
 export type RequestType = 'session' | 'senior';
@@ -279,6 +289,59 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
   const [sharedMeetingLinks, setSharedMeetingLinks] = useState<SharedMeetingLink[]>([]);
   const scrollFnRef = useRef<(() => void) | null>(null);
 
+  // ── Sync with Supabase in Realtime when configured ────────────────────────
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const loadData = async () => {
+      try {
+        const dbReqs = await getMentorshipRequests();
+        if (dbReqs && dbReqs.length > 0) {
+          const mappedIncoming: FacultyIncomingRequest[] = dbReqs.map(r => ({
+            id: r.id,
+            studentName: r.student_profile?.full_name || 'Khushi Valecha',
+            studentInitials: (r.student_profile?.full_name || 'KV').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+            studentUID: r.student_profile?.uid_or_empid || '25AML10304',
+            studentSection: r.student_profile?.section || '25AML-304',
+            studentCourse: r.student_profile?.course || 'B.E. CSE (AI & ML)',
+            studentSemester: String(r.student_profile?.semester || '1st'),
+            studentBatch: String(r.student_profile?.batch || '2024–2028'),
+            studentCity: 'Chandigarh',
+            studentHostel: 'Hostel',
+            category: r.category || 'Academics',
+            categoryKey: r.category?.toLowerCase() || 'academic',
+            concern: r.concern || r.topic,
+            submittedAt: r.created_at ? new Date(r.created_at) : new Date(),
+            status: r.status === 'completed' ? 'completed' : r.status === 'accepted' ? 'accepted' : 'pending',
+            preferredDate: r.preferred_date || 'Tomorrow',
+            preferredTime: r.preferred_time || '2:00 PM',
+            meetingMode: r.mode || 'Online',
+            meetingLocation: r.meeting_location || (r.mode === 'Offline' ? 'Block B1, Cabin 312' : 'Google Meet'),
+            duration: r.duration || '30 min',
+          }));
+          setFacultyIncoming(mappedIncoming);
+
+          const dbLinks: SharedMeetingLink[] = dbReqs
+            .filter(r => r.meeting_link)
+            .map(r => ({
+              facultyRequestId: r.id,
+              link: r.meeting_link!,
+              sharedAt: new Date(r.created_at || Date.now()),
+            }));
+          if (dbLinks.length > 0) {
+            setSharedMeetingLinks(dbLinks);
+          }
+        }
+      } catch (err) {
+        console.error('Supabase load error:', err);
+      }
+    };
+
+    loadData();
+    const unsubscribe = subscribeToMentorshipChanges(loadData);
+    return () => unsubscribe();
+  }, []);
+
   const addRequest = useCallback((topic: string, type: RequestType, options?: AddRequestOptions) => {
     const id = `REQ-${Date.now()}`;
     const newReq: MentorshipRequest = {
@@ -316,6 +379,17 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
       duration: '30 min',
     }, ...prev]);
 
+    // If Supabase is configured, sync to database
+    if (isSupabaseConfigured) {
+      createMentorshipRequest({
+        topic,
+        category: type === 'session' ? 'Academics' : 'Peer Mentorship',
+        mode: options?.mode || 'Online',
+        preferredDate: options?.sessionDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        preferredTime: options?.sessionTime || '2:00 PM',
+      });
+    }
+
     // Simulate auto-assign after 6s (existing behaviour)
     setTimeout(() => {
       const assignedMentor = type === 'session' ? FACULTY_MENTOR : SENIOR_MENTOR;
@@ -338,6 +412,9 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
 
   // Faculty manually accepts a request
   const acceptFacultyRequest = useCallback((reqId: string) => {
+    if (isSupabaseConfigured) {
+      acceptMentorshipRequest(reqId);
+    }
     setFacultyIncoming(prev => prev.map(r =>
       r.id === reqId ? { ...r, status: 'accepted' } : r
     ));
@@ -364,6 +441,9 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const markSessionComplete = useCallback((reqId: string) => {
+    if (isSupabaseConfigured) {
+      completeMentorshipRequest(reqId);
+    }
     setFacultyIncoming(prev => prev.map(r =>
       r.id === reqId ? { ...r, status: 'completed' } : r
     ));
@@ -386,6 +466,9 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const submitFeedback = useCallback((sessionId: string, rating: number, comment: string) => {
+    if (isSupabaseConfigured) {
+      submitSessionFeedbackSupabase({ requestId: sessionId, rating, comment });
+    }
     // Store feedback under both student request id and faculty request id
     const facultyReq = facultyIncoming.find(r => r.assignedMentorRequestId === sessionId);
     const entries: SessionFeedback[] = [
@@ -399,6 +482,9 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
   }, [facultyIncoming]);
 
   const shareMeetingLink = useCallback((facultyRequestId: string, link: string) => {
+    if (isSupabaseConfigured) {
+      shareMeetingLinkSupabase(facultyRequestId, link);
+    }
     const facultyReq = facultyIncoming.find(r => r.id === facultyRequestId);
     setSharedMeetingLinks(prev => [
       { facultyRequestId, studentRequestId: facultyReq?.assignedMentorRequestId, link, sharedAt: new Date() },
