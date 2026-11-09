@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
 import {
   GraduationCap, BookOpen, Building, Eye, EyeOff, X, Loader2,
   CheckCircle2, Lock, User, ArrowRight, ArrowLeft, Briefcase,
@@ -140,13 +141,26 @@ export function LoginModal({ isOpen, onLoginSuccess, onCancel, loginType }: Logi
     }
 
     setLoading(true);
-    setTimeout(() => {
+    const performLogin = async () => {
+      if (isSupabaseConfigured && supabase && fieldA.includes('@')) {
+        try {
+          await supabase.auth.signInWithPassword({
+            email: fieldA.trim().toLowerCase(),
+            password: fieldB.trim(),
+          });
+        } catch (err) {
+          console.warn('Supabase auth fallback:', err);
+        }
+      }
+
       setLoading(false);
       setSuccess(true);
       generateCaptcha(); // fresh code ready underneath for the next login
       const role = resolveRole();
       setTimeout(() => onLoginSuccess(role), 1800);
-    }, 2000);
+    };
+
+    setTimeout(performLogin, 1500);
   };
 
   const needsThirdField = () => false;

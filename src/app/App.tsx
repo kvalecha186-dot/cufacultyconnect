@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import { Routes, Route, useNavigate, Navigate } from 'react-router';
 import { SplashScreen } from './components/SplashScreen';
 import { CUIMSLanding } from './components/CUIMSLanding';
 import { LoginModal, type ResolvedRole } from './components/LoginModal';
@@ -12,46 +13,51 @@ import { DirectorView } from './components/dashboards/DirectorView';
 import { BookInteractionModal } from './components/BookInteractionModal';
 import { MentorshipProvider } from './data/mentorshipStore';
 
-type View = 'landing' | 'dashboard';
 type LoginType = 'student' | 'faculty' | 'hod';
 
-export default function App() {
-  const [splashDone, setSplashDone] = useState(false);
-  const [view, setView] = useState<View>('landing');
+function LandingPage() {
   const [showAbout, setShowAbout] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [loginType, setLoginType] = useState<LoginType>('student');
-  const [dashboardRole, setDashboardRole] = useState<DashboardRole>('student');
-  const [showBooking, setShowBooking] = useState(false);
-
-  const handleSplashComplete = useCallback(() => setSplashDone(true), []);
-
-  // Browser back button support
-  useEffect(() => {
-    const handlePopState = () => {
-      if (view === 'dashboard') setView('landing');
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [view]);
+  const navigate = useNavigate();
 
   const handleLoginClick = (type: LoginType) => {
     setLoginType(type);
     setShowLogin(true);
   };
 
-  /* Receives the resolved role from LoginModal (student/faculty/senior/hod/director) */
   const handleLoginSuccess = (role: ResolvedRole) => {
     setShowLogin(false);
-    setDashboardRole(role as DashboardRole);
     setTimeout(() => {
-      setView('dashboard');
-      window.history.pushState({ view: 'dashboard' }, '');
+      navigate(`/${role}`);
     }, 300);
   };
 
-  const renderDashboardContent = (role: DashboardRole, activeTab: string) => {
-    switch (role) {
+  return (
+    <div>
+      <CUIMSLanding
+        onLoginClick={handleLoginClick}
+        onFacultyPortal={() => navigate('/faculty')}
+        onAboutClick={() => setShowAbout(true)}
+        onBookSlot={() => navigate('/student')}
+      />
+      <LoginModal
+        isOpen={showLogin}
+        onLoginSuccess={handleLoginSuccess}
+        onCancel={() => setShowLogin(false)}
+        loginType={loginType}
+      />
+      <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
+    </div>
+  );
+}
+
+function DashboardPage({ role }: { role: DashboardRole }) {
+  const [showBooking, setShowBooking] = useState(false);
+  const navigate = useNavigate();
+
+  const renderDashboardContent = (currentRole: DashboardRole, activeTab: string) => {
+    switch (currentRole) {
       case 'student':   return <StudentView activeTab={activeTab} onBookSession={() => setShowBooking(true)} />;
       case 'senior':    return <SeniorBuddyView activeTab={activeTab} />;
       case 'faculty':   return <FacultyMentorView activeTab={activeTab} />;
@@ -62,36 +68,37 @@ export default function App() {
   };
 
   return (
-    <MentorshipProvider>
-    <div className="min-h-screen bg-white">
-      {!splashDone && <SplashScreen onComplete={handleSplashComplete} />}
-
-      {view === 'landing' && (
-        <div>
-          <CUIMSLanding
-            onLoginClick={handleLoginClick}
-            onFacultyPortal={() => { setDashboardRole('faculty'); setView('dashboard'); window.history.pushState({ view: 'dashboard' }, ''); }}
-            onAboutClick={() => setShowAbout(true)}
-            onBookSlot={() => {}}
-          />
-          <LoginModal
-            isOpen={showLogin}
-            onLoginSuccess={handleLoginSuccess}
-            onCancel={() => setShowLogin(false)}
-            loginType={loginType}
-          />
-          <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
-        </div>
-      )}
-
-      {view === 'dashboard' && (
-        <DashboardShell role={dashboardRole} onBack={() => setView('landing')}>
-          {(currentRole: DashboardRole, activeTab: string) => renderDashboardContent(currentRole, activeTab)}
-        </DashboardShell>
-      )}
-
+    <>
+      <DashboardShell role={role} onBack={() => navigate('/')}>
+        {(currentRole: DashboardRole, activeTab: string) => renderDashboardContent(currentRole, activeTab)}
+      </DashboardShell>
       <BookInteractionModal isOpen={showBooking} onClose={() => setShowBooking(false)} />
-    </div>
+    </>
+  );
+}
+
+export default function App() {
+  const [splashDone, setSplashDone] = useState(() => {
+    return window.location.pathname !== '/' && window.location.pathname !== '';
+  });
+
+  const handleSplashComplete = useCallback(() => setSplashDone(true), []);
+
+  return (
+    <MentorshipProvider>
+      <div className="min-h-screen bg-white">
+        {!splashDone && <SplashScreen onComplete={handleSplashComplete} />}
+
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/student" element={<DashboardPage role="student" />} />
+          <Route path="/faculty" element={<DashboardPage role="faculty" />} />
+          <Route path="/senior" element={<DashboardPage role="senior" />} />
+          <Route path="/hod" element={<DashboardPage role="hod" />} />
+          <Route path="/director" element={<DashboardPage role="director" />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
     </MentorshipProvider>
   );
 }
