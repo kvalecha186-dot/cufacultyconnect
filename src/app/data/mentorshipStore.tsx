@@ -415,7 +415,8 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
   // Faculty manually accepts a request
   const acceptFacultyRequest = useCallback((reqId: string) => {
     if (isSupabaseConfigured) {
-      acceptMentorshipRequest(reqId);
+      void acceptMentorshipRequest(reqId).then(ok => { if (!ok) console.error('The request could not be accepted. Check your assigned role and request status.'); });
+      return;
     }
     setFacultyIncoming(prev => prev.map(r =>
       r.id === reqId ? { ...r, status: 'accepted' } : r
@@ -444,7 +445,8 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
 
   const markSessionComplete = useCallback((reqId: string) => {
     if (isSupabaseConfigured) {
-      completeMentorshipRequest(reqId);
+      void completeMentorshipRequest(reqId).then(ok => { if (!ok) console.error('The session could not be completed. Check mentor assignment and request status.'); });
+      return;
     }
     setFacultyIncoming(prev => prev.map(r =>
       r.id === reqId ? { ...r, status: 'completed' } : r
@@ -469,7 +471,8 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
 
   const submitFeedback = useCallback((sessionId: string, rating: number, comment: string) => {
     if (isSupabaseConfigured) {
-      submitSessionFeedbackSupabase({ requestId: sessionId, rating, comment });
+      void submitSessionFeedbackSupabase({ requestId: sessionId, rating, comment }).then(ok => { if (!ok) console.error('Feedback was not saved. Only the student who owns a completed session can review it.'); });
+      return;
     }
     // Store feedback under both student request id and faculty request id
     const facultyReq = facultyIncoming.find(r => r.assignedMentorRequestId === sessionId);
@@ -485,7 +488,8 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
 
   const shareMeetingLink = useCallback((facultyRequestId: string, link: string) => {
     if (isSupabaseConfigured) {
-      shareMeetingLinkSupabase(facultyRequestId, link);
+      void shareMeetingLinkSupabase(facultyRequestId, link).then(ok => { if (!ok) console.error('Meeting link was not saved. Check that you are the assigned mentor and the link uses HTTPS.'); });
+      return;
     }
     const facultyReq = facultyIncoming.find(r => r.id === facultyRequestId);
     setSharedMeetingLinks(prev => [
