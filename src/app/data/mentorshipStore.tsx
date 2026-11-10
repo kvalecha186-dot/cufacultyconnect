@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect } f
 import {
   isSupabaseConfigured,
   getMentorshipRequests,
+  getMyMentorshipRequests,
   createMentorshipRequest,
   acceptMentorshipRequest,
   shareMeetingLinkSupabase,
@@ -265,26 +266,11 @@ const MentorshipContext = createContext<MentorshipContextValue>({
 });
 
 export function MentorshipProvider({ children }: { children: React.ReactNode }) {
-  const [requests, setRequests] = useState<MentorshipRequest[]>([
-    {
-      id: 'REQ-COMPLETED-DEMO',
-      topic: 'Campus Life',
-      type: 'session',
-      dateSubmitted: '14 Jun 2026',
-      status: 'completed',
-      mentor: FACULTY_MENTOR,
-      sessionDate: '14 Jun 2026',
-      sessionTime: '3:00 PM',
-      mode: 'Offline',
-      concernPreview: 'Guidance on joining coding clubs and balancing academics.',
-    },
-  ]);
+  const [requests, setRequests] = useState<MentorshipRequest[]>(isSupabaseConfigured ? [] : [{ id: 'REQ-COMPLETED-DEMO', topic: 'Campus Life', type: 'session', dateSubmitted: '14 Jun 2026', status: 'completed', mentor: FACULTY_MENTOR, sessionDate: '14 Jun 2026', sessionTime: '3:00 PM', mode: 'Offline', concernPreview: 'Guidance on joining coding clubs and balancing academics.' }]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [highlightRequestId, setHighlightRequestId] = useState<string | null>(null);
-  const [facultyIncoming, setFacultyIncoming] = useState<FacultyIncomingRequest[]>(SEED_REQUESTS);
-  const [completedSessions, setCompletedSessions] = useState<CompletedSession[]>([
-    { id: 'FR-000', completedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
-  ]);
+  const [facultyIncoming, setFacultyIncoming] = useState<FacultyIncomingRequest[]>(isSupabaseConfigured ? [] : SEED_REQUESTS);
+  const [completedSessions, setCompletedSessions] = useState<CompletedSession[]>(isSupabaseConfigured ? [] : [{ id: 'FR-000', completedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }]);
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([]);
   const [sharedMeetingLinks, setSharedMeetingLinks] = useState<SharedMeetingLink[]>([]);
   const scrollFnRef = useRef<(() => void) | null>(null);
@@ -295,43 +281,51 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
 
     const loadData = async () => {
       try {
-        const dbReqs = await getMentorshipRequests();
-        if (dbReqs && dbReqs.length > 0) {
-          const mappedIncoming: FacultyIncomingRequest[] = dbReqs.map(r => ({
-            id: r.id,
-            studentName: r.student_profile?.full_name || 'Khushi Valecha',
-            studentInitials: (r.student_profile?.full_name || 'KV').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-            studentUID: r.student_profile?.uid_or_empid || '25AML10304',
-            studentSection: r.student_profile?.section || '25AML-304',
-            studentCourse: r.student_profile?.course || 'B.E. CSE (AI & ML)',
-            studentSemester: String(r.student_profile?.semester || '1st'),
-            studentBatch: String(r.student_profile?.batch || '2024–2028'),
-            studentCity: 'Chandigarh',
-            studentHostel: 'Hostel',
-            category: r.category || 'Academics',
-            categoryKey: r.category?.toLowerCase() || 'academic',
-            concern: r.concern || r.topic,
-            submittedAt: r.created_at ? new Date(r.created_at) : new Date(),
-            status: r.status === 'completed' ? 'completed' : r.status === 'accepted' ? 'accepted' : 'pending',
-            preferredDate: r.preferred_date || 'Tomorrow',
-            preferredTime: r.preferred_time || '2:00 PM',
-            meetingMode: r.mode || 'Online',
-            meetingLocation: r.meeting_location || (r.mode === 'Offline' ? 'Block B1, Cabin 312' : 'Google Meet'),
-            duration: r.duration || '30 min',
-          }));
-          setFacultyIncoming(mappedIncoming);
+        const [dbReqs, myReqs] = await Promise.all([
+          getMentorshipRequests(),
+          getMyMentorshipRequests(),
+        ]);
 
-          const dbLinks: SharedMeetingLink[] = dbReqs
-            .filter(r => r.meeting_link)
-            .map(r => ({
-              facultyRequestId: r.id,
-              link: r.meeting_link!,
-              sharedAt: new Date(r.created_at || Date.now()),
-            }));
-          if (dbLinks.length > 0) {
-            setSharedMeetingLinks(dbLinks);
-          }
-        }
+        setRequests(myReqs.map(r => ({
+          id: r.id,
+          topic: r.topic,
+          type: r.category?.toLowerCase().includes('peer') ? 'senior' : 'session',
+          dateSubmitted: r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : fmtDate(),
+          status: r.status === 'completed' ? 'completed' : (r.status === 'accepted' || r.status === 'assigned') ? 'assigned' : 'pending',
+          sessionDate: r.preferred_date,
+          sessionTime: r.preferred_time,
+          mode: r.mode,
+          concernPreview: r.concern || r.topic,
+        })));
+
+        const mappedIncoming: FacultyIncomingRequest[] = dbReqs.map(r => ({
+          id: r.id,
+          studentName: r.student_profile?.full_name || 'Student',
+          studentInitials: (r.student_profile?.full_name || 'ST').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+          studentUID: r.student_profile?.uid_or_empid || '—',
+          studentSection: r.student_profile?.section || '—',
+          studentCourse: r.student_profile?.course || '—',
+          studentSemester: String(r.student_profile?.semester || '—'),
+          studentBatch: String(r.student_profile?.batch || '—'),
+          studentCity: '',
+          studentHostel: '',
+          category: r.category || 'Academics',
+          categoryKey: r.category?.toLowerCase() || 'academic',
+          concern: r.concern || r.topic,
+          submittedAt: r.created_at ? new Date(r.created_at) : new Date(),
+          status: r.status === 'completed' ? 'completed' : r.status === 'accepted' ? 'accepted' : 'pending',
+          preferredDate: r.preferred_date || '—',
+          preferredTime: r.preferred_time || '—',
+          meetingMode: r.mode || 'Online',
+          meetingLocation: r.meeting_location || '',
+          duration: r.duration || '30 min',
+        }));
+        setFacultyIncoming(mappedIncoming);
+
+        const dbLinks: SharedMeetingLink[] = dbReqs
+          .filter(r => r.meeting_link)
+          .map(r => ({ facultyRequestId: r.id, link: r.meeting_link!, sharedAt: new Date(r.created_at || Date.now()) }));
+        setSharedMeetingLinks(dbLinks);
       } catch (err) {
         console.error('Supabase load error:', err);
       }
