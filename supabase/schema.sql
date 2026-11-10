@@ -79,16 +79,20 @@ CREATE TABLE IF NOT EXISTS public.discussion_posts (
 );
 
 -- Authenticated identity and role-scoped row-level security.
-create or replace function public.current_cu_profile_id()
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
+create or replace function private.current_cu_profile_id()
 returns uuid language sql stable security definer set search_path = ''
 as $$ select p.id from public.profiles p where lower(p.email) = lower((select auth.jwt() ->> 'email')) limit 1 $$;
-create or replace function public.current_cu_role()
+create or replace function private.current_cu_role()
 returns text language sql stable security definer set search_path = ''
 as $$ select p.role from public.profiles p where lower(p.email) = lower((select auth.jwt() ->> 'email')) limit 1 $$;
-revoke all on function public.current_cu_profile_id() from public;
-revoke all on function public.current_cu_role() from public;
-grant execute on function public.current_cu_profile_id() to authenticated;
-grant execute on function public.current_cu_role() to authenticated;
+revoke all on function private.current_cu_profile_id() from public, anon;
+revoke all on function private.current_cu_role() from public, anon;
+grant execute on function private.current_cu_profile_id() to authenticated;
+grant execute on function private.current_cu_role() to authenticated;
 
 alter table public.profiles enable row level security;
 alter table public.mentorship_requests enable row level security;
@@ -106,55 +110,79 @@ drop policy if exists "Allow all requests" on public.mentorship_requests;
 drop policy if exists "Allow all feedback" on public.session_feedback;
 
 create policy "profiles_read_scoped" on public.profiles for select to authenticated
-using (id = (select public.current_cu_profile_id()) or role in ('faculty','senior') or (select public.current_cu_role()) in ('hod','director'));
+using (
+  id = (select private.current_cu_profile_id())
+  or role in ('faculty','senior')
+  or (role = 'student' and (select private.current_cu_role()) in ('faculty','senior','hod','director'))
+  or (select private.current_cu_role()) in ('hod','director')
+);
 create policy "profiles_update_own" on public.profiles for update to authenticated
-using (id = (select public.current_cu_profile_id()))
-with check (id = (select public.current_cu_profile_id()) and role = (select public.current_cu_role()));
+using (id = (select private.current_cu_profile_id()))
+with check (id = (select private.current_cu_profile_id()) and role = (select private.current_cu_role()));
 revoke update on public.profiles from anon, authenticated;
 grant update (full_name, department, course, section, block, semester, batch, avatar_url) on public.profiles to authenticated;
 
 create policy "requests_read_participants" on public.mentorship_requests for select to authenticated
-using (student_id = (select public.current_cu_profile_id()) or mentor_id = (select public.current_cu_profile_id()) or (mentor_id is null and (select public.current_cu_role()) in ('faculty','senior')) or (select public.current_cu_role()) in ('hod','director'));
+using (
+  student_id = (select private.current_cu_profile_id())
+  or mentor_id = (select private.current_cu_profile_id())
+  or (mentor_id is null and (select private.current_cu_role()) in ('faculty','senior'))
+  or (select private.current_cu_role()) in ('hod','director')
+);
 create policy "requests_insert_as_student" on public.mentorship_requests for insert to authenticated
-with check (student_id = (select public.current_cu_profile_id()) and mentor_id is null and status = 'pending' and (select public.current_cu_role()) = 'student');
+with check (student_id = (select private.current_cu_profile_id()) and mentor_id is null and status = 'pending' and (select private.current_cu_role()) = 'student');
 create policy "requests_update_by_mentor_or_admin" on public.mentorship_requests for update to authenticated
-using (mentor_id = (select public.current_cu_profile_id()) or (mentor_id is null and (select public.current_cu_role()) in ('faculty','senior')) or (select public.current_cu_role()) in ('hod','director'))
-with check ((mentor_id = (select public.current_cu_profile_id()) and (select public.current_cu_role()) in ('faculty','senior')) or (select public.current_cu_role()) in ('hod','director'));
+using (
+  mentor_id = (select private.current_cu_profile_id())
+  or (mentor_id is null and (select private.current_cu_role()) in ('faculty','senior'))
+  or (select private.current_cu_role()) in ('hod','director')
+)
+with check (
+  (mentor_id = (select private.current_cu_profile_id()) and (select private.current_cu_role()) in ('faculty','senior'))
+  or (select private.current_cu_role()) in ('hod','director')
+);
 revoke update on public.mentorship_requests from anon, authenticated;
 grant update (mentor_id, status, meeting_link, meeting_location, updated_at) on public.mentorship_requests to authenticated;
 
 create policy "feedback_read_participants" on public.session_feedback for select to authenticated
-using (student_id = (select public.current_cu_profile_id()) or mentor_id = (select public.current_cu_profile_id()) or (select public.current_cu_role()) in ('hod','director'));
+using (student_id = (select private.current_cu_profile_id()) or mentor_id = (select private.current_cu_profile_id()) or (select private.current_cu_role()) in ('hod','director'));
 create policy "feedback_insert_after_completed_session" on public.session_feedback for insert to authenticated
-with check (student_id = (select public.current_cu_profile_id()) and exists (select 1 from public.mentorship_requests r where r.id = request_id and r.student_id = (select public.current_cu_profile_id()) and r.status = 'completed'));
+with check (
+  student_id = (select private.current_cu_profile_id())
+  and exists (select 1 from public.mentorship_requests r where r.id = request_id and r.student_id = (select private.current_cu_profile_id()) and r.status = 'completed')
+);
 
 create policy "notifications_read_own" on public.notifications for select to authenticated
-using (user_id = (select public.current_cu_profile_id()));
+using (user_id = (select private.current_cu_profile_id()));
 create policy "notifications_mark_own_read" on public.notifications for update to authenticated
-using (user_id = (select public.current_cu_profile_id()))
-with check (user_id = (select public.current_cu_profile_id()) and read = true);
+using (user_id = (select private.current_cu_profile_id()))
+with check (user_id = (select private.current_cu_profile_id()) and read = true);
 revoke update on public.notifications from anon, authenticated;
 grant update (read) on public.notifications to authenticated;
 
 create policy "discussion_read_authenticated" on public.discussion_posts for select to authenticated using (true);
 create policy "discussion_insert_own" on public.discussion_posts for insert to authenticated
-with check (author_id = (select public.current_cu_profile_id()));
+with check (author_id = (select private.current_cu_profile_id()));
 create policy "discussion_update_own" on public.discussion_posts for update to authenticated
-using (author_id = (select public.current_cu_profile_id())) with check (author_id = (select public.current_cu_profile_id()));
+using (author_id = (select private.current_cu_profile_id())) with check (author_id = (select private.current_cu_profile_id()));
 create policy "discussion_delete_own" on public.discussion_posts for delete to authenticated
-using (author_id = (select public.current_cu_profile_id()));
+using (author_id = (select private.current_cu_profile_id()));
 
 revoke all on public.profiles, public.mentorship_requests, public.session_feedback, public.notifications, public.discussion_posts from anon;
-grant select on public.profiles, public.mentorship_requests, public.session_feedback, public.notifications, public.discussion_posts to authenticated;
+revoke select on public.profiles from authenticated;
+grant select (id, email, full_name, role, uid_or_empid, department, course, section, block, semester, batch, designation, avatar_url, created_at, updated_at) on public.profiles to authenticated;
+grant select on public.mentorship_requests, public.session_feedback, public.notifications, public.discussion_posts to authenticated;
 grant insert on public.mentorship_requests, public.session_feedback, public.discussion_posts to authenticated;
 grant delete on public.discussion_posts to authenticated;
 
-create or replace view public.public_student_directory with (security_barrier = true) as
-select p.id, p.full_name, p.uid_or_empid, p.section, p.course, p.semester, p.batch
-from public.profiles p where p.role = 'student'
-and (select public.current_cu_role()) in ('faculty','senior','hod','director');
-revoke all on public.public_student_directory from public, anon;
-grant select on public.public_student_directory to authenticated;
+create index if not exists mentorship_requests_student_id_idx on public.mentorship_requests(student_id);
+create index if not exists mentorship_requests_mentor_id_idx on public.mentorship_requests(mentor_id);
+create index if not exists session_feedback_request_id_idx on public.session_feedback(request_id);
+create index if not exists session_feedback_student_id_idx on public.session_feedback(student_id);
+create index if not exists session_feedback_mentor_id_idx on public.session_feedback(mentor_id);
+create index if not exists notifications_user_id_idx on public.notifications(user_id);
+create index if not exists notifications_request_id_idx on public.notifications(request_id);
+create index if not exists discussion_posts_author_id_idx on public.discussion_posts(author_id);
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- REALTIME SUBSCRIPTIONS SETUP
