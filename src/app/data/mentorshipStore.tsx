@@ -286,6 +286,13 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
           getMyMentorshipRequests(),
         ]);
 
+        setCompletedSessions(myReqs
+          .filter(r => r.status === 'completed')
+          .map(r => ({
+            id: r.id,
+            completedAt: r.updated_at ? new Date(r.updated_at) : new Date(r.created_at || Date.now()),
+          })));
+
         setRequests(myReqs.map(r => ({
           id: r.id,
           topic: r.topic,
@@ -530,6 +537,7 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
 
   // ── DEMO: seed one request for each of the 4 example states ──────────────
   const seedDemoSessions = useCallback(() => {
+    if (isSupabaseConfigured) return;
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const fmtDateObj = (d: Date) =>
