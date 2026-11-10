@@ -99,68 +99,72 @@ export function LoginModal({ isOpen, onLoginSuccess, onCancel, loginType }: Logi
     if (e.target === overlayRef.current && !loading) onCancel();
   };
 
-  const resolveRole = (): ResolvedRole => {
-    if (loginType === 'student') return 'student';
-    if (loginType === 'faculty') return subRole === 'senior' ? 'senior' : 'faculty';
-    if (loginType === 'hod') return subRole === 'director' ? 'director' : 'hod';
-    return 'student';
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
+    const email = fieldA.trim().toLowerCase();
 
-    if (!fieldA.trim()) {
-      errs.fieldA = 'This field is required';
-    } else if (loginType === 'student') {
-      const value = fieldA.trim();
-      const uidEmailPattern = /^\d{2}[A-Za-z]{2,4}\d{4,6}@cuchd\.in$/;
-      if (!uidEmailPattern.test(value)) {
-        errs.fieldA = 'Enter a valid UID email (e.g. 21CSE08472@cuchd.in)';
-      }
+    if (!email) errs.fieldA = 'University email is required';
+    else if (!/^[^\\s@]+@cuchd\\.in$/i.test(email)) {
+      errs.fieldA = 'Use your verified @cuchd.in university email';
     }
-
-    if (!fieldB.trim()) errs.fieldB = 'Password is required';
-    else if (fieldB.length < 4) errs.fieldB = 'Must be at least 4 characters';
-    
-    // Captcha Validation — case-sensitive, exact match
-    if (!captchaInput.trim()) {
-      errs.captcha = 'Verification code is required';
-    } else if (captchaInput.trim() !== captchaCode) {
-      errs.captcha = 'Incorrect verification code';
-    }
+    if (!fieldB) errs.fieldB = 'Password is required';
+    if (!captchaInput.trim()) errs.captcha = 'Verification code is required';
+    else if (captchaInput.trim() !== captchaCode) errs.captcha = 'Incorrect verification code';
 
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      // Security: issue a fresh code after EVERY failed attempt (wrong
-      // password, wrong captcha, or missing fields) so the same code can
-      // never be reused across repeated guesses.
       generateCaptcha();
       setCaptchaInput('');
       return;
     }
 
+    if (!isSupabaseConfigured || !supabase) {
+      setErrors({ form: 'Authentication is unavailable. Please try again later.' });
+      return;
+    }
+
     setLoading(true);
-    const performLogin = async () => {
-      if (isSupabaseConfigured && supabase && fieldA.includes('@')) {
-        try {
-          await supabase.auth.signInWithPassword({
-            email: fieldA.trim().toLowerCase(),
-            password: fieldB.trim(),
-          });
-        } catch (err) {
-          console.warn('Supabase auth fallback:', err);
-        }
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: fieldB,
+      });
+      if (error) throw error;
+      if (!data.user?.email) throw new Error('Unable to verify your account.');
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('email', data.user.email.toLowerCase())
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+      if (!profile) throw new Error('Your university account is not provisioned. Contact the administrator.');
+
+      const expectedRole: ResolvedRole =
+        loginType === 'student'
+          ? 'student'
+          : loginType === 'faculty'
+            ? (subRole === 'senior' ? 'senior' : 'faculty')
+            : (subRole === 'director' ? 'director' : 'hod');
+
+      if (profile.role !== expectedRole) {
+        await supabase.auth.signOut();
+        throw new Error('This account is not authorized for the selected portal.');
       }
 
-      setLoading(false);
       setSuccess(true);
-      generateCaptcha(); // fresh code ready underneath for the next login
-      const role = resolveRole();
-      setTimeout(() => onLoginSuccess(role), 1800);
-    };
-
-    setTimeout(performLogin, 1500);
+      generateCaptcha();
+      window.setTimeout(() => onLoginSuccess(profile.role as ResolvedRole), 500);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed. Please try again.';
+      setErrors({ form: message });
+      generateCaptcha();
+      setCaptchaInput('');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const needsThirdField = () => false;
@@ -184,11 +188,11 @@ export function LoginModal({ isOpen, onLoginSuccess, onCancel, loginType }: Logi
   };
 
   const getFields = () => {
-    if (loginType === 'student') return { a: 'UID Email', aPlaceholder: 'e.g. 21CSE08472@cuchd.in', b: 'Password', bPlaceholder: 'Enter your password' };
-    if (subRole === 'faculty') return { a: 'Faculty ID', aPlaceholder: 'e.g. CU-FAC-08421', b: 'Password', bPlaceholder: 'Enter your password' };
-    if (subRole === 'senior') return { a: 'Senior UID', aPlaceholder: 'e.g. 23BCS12045', b: 'Password', bPlaceholder: 'Enter your password' };
-    if (subRole === 'hod_role') return { a: 'HOD Login ID', aPlaceholder: 'e.g. CU-HOD-00112', b: 'Secure PIN / Password', bPlaceholder: 'Enter PIN or password' };
-    if (subRole === 'director') return { a: 'Director Access ID', aPlaceholder: 'e.g. CU-DIR-00001', b: 'Authentication Key', bPlaceholder: 'Enter your secure key' };
+    if (loginType === 'student') return { a: 'University Email', aPlaceholder: 'e.g. 25aml10304@cuchd.in', b: 'Password', bPlaceholder: 'Enter your password' };
+    if (subRole === 'faculty') return { a: 'University Email', aPlaceholder: 'e.g. faculty@cuchd.in', b: 'Password', bPlaceholder: 'Enter your password' };
+    if (subRole === 'senior') return { a: 'University Email', aPlaceholder: 'e.g. senior@cuchd.in', b: 'Password', bPlaceholder: 'Enter your password' };
+    if (subRole === 'hod_role') return { a: 'University Email', aPlaceholder: 'e.g. hod@cuchd.in', b: 'Password', bPlaceholder: 'Enter your password' };
+    if (subRole === 'director') return { a: 'University Email', aPlaceholder: 'e.g. director@cuchd.in', b: 'Password', bPlaceholder: 'Enter your password' };
     return { a: '', aPlaceholder: '', b: '', bPlaceholder: '' };
   };
 
@@ -321,7 +325,7 @@ export function LoginModal({ isOpen, onLoginSuccess, onCancel, loginType }: Logi
                 {!errors.captcha && <p className="mt-1 text-xs text-[#999]">Code is case-sensitive</p>}
               </div>
 
-              <div className="flex items-center justify-between">
+              {errors.form && <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{errors.form}</p>}\n              <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <div onClick={() => setRemember(!remember)} className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all duration-300 cursor-pointer ${remember ? 'bg-[#E30613] border-transparent' : 'border-[#E5E5E5] group-hover:border-[#E30613]'}`}>
                     {remember && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
@@ -339,7 +343,7 @@ export function LoginModal({ isOpen, onLoginSuccess, onCancel, loginType }: Logi
               </button>
               <div className="flex items-center justify-center gap-2 pt-1">
                 <Shield className="w-3 h-3 text-[#666]" />
-                <span className="text-[11px] text-[#666]">Secured with CU Enterprise Authentication</span>
+                <span className="text-[11px] text-[#666]">Authenticated securely with Supabase</span>
               </div>
             </form>
           ) : null}
