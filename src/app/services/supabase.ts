@@ -39,6 +39,23 @@ export interface DbMentorshipRequest {
 }
 
 // 1. Fetch live incoming requests
+export async function getMyMentorshipRequests(): Promise<DbMentorshipRequest[]> {
+  if (!supabase) return [];
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user?.email) return [];
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles').select('id').eq('email', user.email.toLowerCase()).maybeSingle();
+  if (profileError || !profile) return [];
+  const { data, error } = await supabase
+    .from('mentorship_requests').select('*').eq('student_id', profile.id)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('Unable to load your mentorship requests:', error);
+    return [];
+  }
+  return data || [];
+}
+
 export async function getMentorshipRequests(): Promise<DbMentorshipRequest[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
