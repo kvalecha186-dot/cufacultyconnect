@@ -127,37 +127,43 @@ export async function acceptMentorshipRequest(requestId: string) {
     .from('profiles').select('id').eq('email', user.email.toLowerCase()).maybeSingle();
   if (profileError || !profile) return false;
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('mentorship_requests')
     .update({ mentor_id: profile.id, status: 'accepted', updated_at: new Date().toISOString() })
     .eq('id', requestId)
-    .is('mentor_id', null);
-  return !error;
+    .is('mentor_id', null)
+    .select('id')
+    .maybeSingle();
+  return !error && Boolean(data?.id);
 }
 
 // 4. Share meeting link (Faculty Google Meet / Zoom)
 export async function shareMeetingLinkSupabase(requestId: string, link: string) {
   if (!supabase || !/^https:\/\//i.test(link)) return false;
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('mentorship_requests')
     .update({
       meeting_link: link,
       status: 'accepted',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', requestId);
-  return !error;
+    .eq('id', requestId)
+    .select('id')
+    .maybeSingle();
+  return !error && Boolean(data?.id);
 }
 
 // 5. Mark session complete
 export async function completeMentorshipRequest(requestId: string) {
   if (!supabase) return false;
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('mentorship_requests')
     .update({ status: 'completed', updated_at: new Date().toISOString() })
-    .eq('id', requestId);
+    .eq('id', requestId)
+    .select('id')
+    .maybeSingle();
 
-  return !error;
+  return !error && Boolean(data?.id);
 }
 
 // 6. Submit feedback & rating
