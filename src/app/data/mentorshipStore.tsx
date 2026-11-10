@@ -348,58 +348,66 @@ export function MentorshipProvider({ children }: { children: React.ReactNode }) 
     };
     setRequests(prev => [newReq, ...prev]);
 
-    // Also add to faculty incoming so the faculty dashboard sees it live
-    setFacultyIncoming(prev => [{
-      id: `FR-${Date.now()}`,
-      studentName: 'You (Test)',
-      studentInitials: 'YT',
-      studentUID: '24BCE99999',
-      studentSection: '25AML-304',
-      studentCourse: 'B.E. CSE (AI & ML)',
-      studentSemester: '1st',
-      studentBatch: '2024–2028',
-      studentCity: 'Chandigarh',
-      studentHostel: 'Hostel',
-      category: topic,
-      categoryKey: type === 'session' ? 'academic' : 'personal',
-      concern: topic,
-      submittedAt: new Date(),
-      status: 'pending',
-      assignedMentorRequestId: id,
-      preferredDate: options?.sessionDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-      preferredTime: options?.sessionTime || '2:00 PM',
-      meetingMode: options?.mode || 'Online',
-      meetingLocation: options?.mode === 'Offline' ? 'Block B1, Cabin 312' : 'Google Meet',
-      duration: '30 min',
-    }, ...prev]);
-
-    // If Supabase is configured, sync to database
     if (isSupabaseConfigured) {
       createMentorshipRequest({
         topic,
         category: type === 'session' ? 'Academics' : 'Peer Mentorship',
+        concern: topic,
         mode: options?.mode || 'Online',
         preferredDate: options?.sessionDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         preferredTime: options?.sessionTime || '2:00 PM',
+      }).then(row => {
+        if (!row) {
+          setRequests(prev => prev.filter(request => request.id !== id));
+          return;
+        }
+        setRequests(prev => prev.map(request => request.id === id ? { ...request, id: row.id } : request));
+      }).catch(error => {
+        console.error('Unable to save mentorship request:', error);
+        setRequests(prev => prev.filter(request => request.id !== id));
       });
-    }
-
-    // Simulate auto-assign after 6s (existing behaviour)
-    setTimeout(() => {
-      const assignedMentor = type === 'session' ? FACULTY_MENTOR : SENIOR_MENTOR;
-      setRequests(prev => prev.map(r => r.id === id
-        ? { ...r, status: 'assigned', mentor: assignedMentor }
-        : r
-      ));
-      setNotifications(prev => [{
-        id: `NOTIF-${Date.now()}`,
-        title: type === 'session' ? 'Faculty Mentor Assigned' : 'Senior Mentor Assigned',
-        body: `${assignedMentor.name} has been assigned to help with your query.`,
-        read: false,
-        requestId: id,
-        createdAt: fmtDate(),
+    } else {
+      // Demo-only data is kept out of the connected production environment.
+      setFacultyIncoming(prev => [{
+        id: `FR-${Date.now()}`,
+        studentName: 'Demo Student',
+        studentInitials: 'DS',
+        studentUID: 'DEMO',
+        studentSection: 'Demo section',
+        studentCourse: 'Demo course',
+        studentSemester: '—',
+        studentBatch: '—',
+        studentCity: '',
+        studentHostel: '',
+        category: topic,
+        categoryKey: type === 'session' ? 'academic' : 'personal',
+        concern: topic,
+        submittedAt: new Date(),
+        status: 'pending',
+        assignedMentorRequestId: id,
+        preferredDate: options?.sessionDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        preferredTime: options?.sessionTime || '2:00 PM',
+        meetingMode: options?.mode || 'Online',
+        meetingLocation: options?.mode === 'Offline' ? 'Block B1, Cabin 312' : 'Google Meet',
+        duration: '30 min',
       }, ...prev]);
-    }, 6000);
+
+      setTimeout(() => {
+        const assignedMentor = type === 'session' ? FACULTY_MENTOR : SENIOR_MENTOR;
+        setRequests(prev => prev.map(request => request.id === id
+          ? { ...request, status: 'assigned', mentor: assignedMentor }
+          : request
+        ));
+        setNotifications(prev => [{
+          id: `NOTIF-${Date.now()}`,
+          title: type === 'session' ? 'Faculty Mentor Assigned' : 'Senior Mentor Assigned',
+          body: `${assignedMentor.name} has been assigned to help with your query.`,
+          read: false,
+          requestId: id,
+          createdAt: fmtDate(),
+        }, ...prev]);
+      }, 6000);
+    }
 
     return id;
   }, []);
