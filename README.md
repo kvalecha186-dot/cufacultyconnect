@@ -8,10 +8,15 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite_6-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS_v4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 
 **Direct faculty interactions, peer-to-peer buddy mentoring, intelligent scheduling, and institutional oversight.**
 
-[Explore Live Demo](https://cufacultyconnect.vercel.app) · [Report Bug](https://github.com/kvalecha186-dot/cufacultyconnect/issues) · [Request Feature](https://github.com/kvalecha186-dot/cufacultyconnect/issues)
+[Explore Live Demo](https://cufacultyconnect.vercel.app) · [Screenshots](#-screenshots) · [Features](#-key-features-across-5-user-portals) · [Getting Started](#-getting-started-locally) · [Report Bug](https://github.com/kvalecha186-dot/cufacultyconnect/issues)
+
+<br/>
+
+<img src="docs/screenshots/landing.webp" alt="CU Faculty Connect landing page with Student, Faculty and Director login portals" width="900"/>
 
 </div>
 
@@ -22,6 +27,23 @@
 **CU Faculty Connect** is a full-fledged institutional mentorship and student guidance portal tailored specifically to the academic hierarchy and operational workflows of **Chandigarh University**. 
 
 It eliminates the friction freshers and senior students face when seeking guidance, scheduling cabin or online interactions with faculty members, resolving doubts, and accessing academic support. The system seamlessly connects five core campus stakeholders into a unified digital ecosystem.
+
+---
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/platform-features.webp" alt="Platform features section"/><br/><sub><b>Platform features</b> — live sessions, security and analytics</sub></td>
+    <td width="50%"><img src="docs/screenshots/how-it-works.webp" alt="How Faculty Connect works"/><br/><sub><b>How it works</b> — four simple steps from concern to guidance</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/student-stories.webp" alt="Student success stories"/><br/><sub><b>Student stories</b> — feedback from the mentorship programme</sub></td>
+    <td width="50%"><img src="docs/screenshots/about-modal.webp" alt="About CU Faculty Connect dialog"/><br/><sub><b>About dialog</b> — who uses CU Connect and what each role gets</sub></td>
+  </tr>
+</table>
+
+> Screenshots are captured from the running application. Role dashboards sit behind sign-in and are not shown here.
 
 ---
 
@@ -73,6 +95,8 @@ It eliminates the friction freshers and senior students face when seeking guidan
 | **Data Visualization** | [Recharts](https://recharts.org/) |
 | **Icons** | [Lucide React](https://lucide.dev/) |
 | **Notifications & Effects** | `Sonner` (Toasts), `canvas-confetti` |
+| **Routing** | [React Router 7](https://reactrouter.com/) with deep-linked role dashboards |
+| **Backend & Auth** | [Supabase](https://supabase.com/) (PostgreSQL, Auth, Row Level Security) |
 | **Deployment** | [Vercel](https://vercel.com/) |
 
 ---
@@ -108,6 +132,9 @@ cufacultyconnect/
 │           ├── cuAcademicData.ts        # CU academic hierarchy (Blocks A1-D7, Courses, Sections)
 │           ├── mentorshipStore.tsx      # In-memory reactive context & session state machine
 │           └── sessionStore.ts          # Live meeting link and completed sessions store
+├── supabase/
+│   ├── schema.sql           # Database schema
+│   └── migrations/          # RLS hardening, restricted student directory, private RLS helpers
 ├── vercel.json              # Vercel SPA routing rewrites
 ├── vite.config.ts           # Vite + Tailwind build configuration
 └── package.json
@@ -134,25 +161,32 @@ cufacultyconnect/
    npm install
    ```
 
-3. **Start the local development server:**
+3. **Configure Supabase:** copy `.env.example` to `.env` and add your project values:
+   ```env
+   VITE_SUPABASE_URL=https://your-project-id.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-public-key
+   ```
+   Apply `supabase/schema.sql` and the files in `supabase/migrations/` to your Supabase project.
+
+4. **Start the local development server:**
    ```bash
    npm run dev
    ```
    Open [http://localhost:5173](http://localhost:5173) in your browser to view the application.
 
-4. **Build for production:**
+5. **Build for production:**
    ```bash
    npm run build
    ```
 
 ---
 
-## 🚀 Upcoming Full-Stack Roadmap
+## 🚀 Roadmap
 
-- [ ] **Database Integration**: PostgreSQL database with Prisma ORM / Supabase.
-- [ ] **Real Authentication**: Secure JWT & cookie sessions with role-based access control (RBAC).
+- [x] **Database Integration**: Supabase PostgreSQL with schema and migrations.
+- [x] **Real Authentication**: Supabase Auth with role-scoped Row Level Security (RBAC).
 - [ ] **WebSockets Engine**: Instant live push notifications when faculty shares meeting links.
-- [ ] **Deep Link Routing**: Full URL routing for `/student`, `/faculty`, `/senior`, `/hod`, `/director`.
+- [x] **Deep Link Routing**: Full URL routing for `/student`, `/faculty`, `/senior`, `/hod`, `/director`.
 - [ ] **Native Video Rooms**: WebRTC / Agora integration for direct in-browser 1-on-1 audio/video calls.
 
 ---
