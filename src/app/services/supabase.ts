@@ -73,19 +73,29 @@ export async function createMentorshipRequest(payload: {
   preferredTime: string;
 }) {
   if (!supabase) return null;
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user?.email) return null;
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', user.email.toLowerCase())
+    .maybeSingle();
+  if (profileError || !profile) return null;
+
   const { data, error } = await supabase
     .from('mentorship_requests')
-    .insert([
-      {
-        topic: payload.topic,
-        category: payload.category,
-        concern: payload.concern || payload.topic,
-        mode: payload.mode,
-        preferred_date: payload.preferredDate,
-        preferred_time: payload.preferredTime,
-        status: 'pending',
-      },
-    ])
+    .insert({
+      student_id: profile.id,
+      topic: payload.topic,
+      category: payload.category,
+      concern: payload.concern || payload.topic,
+      mode: payload.mode,
+      preferred_date: payload.preferredDate,
+      preferred_time: payload.preferredTime,
+      status: 'pending',
+      mentor_id: null,
+    })
     .select()
     .single();
 
@@ -99,17 +109,23 @@ export async function createMentorshipRequest(payload: {
 // 3. Accept a pending request (Faculty)
 export async function acceptMentorshipRequest(requestId: string) {
   if (!supabase) return false;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return false;
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles').select('id').eq('email', user.email.toLowerCase()).maybeSingle();
+  if (profileError || !profile) return false;
+
   const { error } = await supabase
     .from('mentorship_requests')
-    .update({ status: 'accepted', updated_at: new Date().toISOString() })
-    .eq('id', requestId);
-
+    .update({ mentor_id: profile.id, status: 'accepted', updated_at: new Date().toISOString() })
+    .eq('id', requestId)
+    .is('mentor_id', null);
   return !error;
 }
 
 // 4. Share meeting link (Faculty Google Meet / Zoom)
 export async function shareMeetingLinkSupabase(requestId: string, link: string) {
-  if (!supabase) return false;
+  if (!supabase || !/^https:\/\//i.test(link)) return false;
   const { error } = await supabase
     .from('mentorship_requests')
     .update({
@@ -118,7 +134,6 @@ export async function shareMeetingLinkSupabase(requestId: string, link: string) 
       updated_at: new Date().toISOString(),
     })
     .eq('id', requestId);
-
   return !error;
 }
 
@@ -139,15 +154,27 @@ export async function submitSessionFeedbackSupabase(payload: {
   rating: number;
   comment: string;
 }) {
-  if (!supabase) return false;
-  const { error } = await supabase.from('session_feedback').insert([
-    {
-      request_id: payload.requestId,
-      rating: payload.rating,
-      comment: payload.comment,
-    },
-  ]);
+  if (!supabase || !Number.isInteger(payload.rating) || payload.rating < 1 || payload.rating > 5) return false;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return false;
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles').select('id').eq('email', user.email.toLowerCase()).maybeSingle();
+  if (profileError || !profile) return false;
 
+  const { data: request, error: requestError } = await supabase
+    .from('mentorship_requests')
+    .select('id, student_id, mentor_id, status')
+    .eq('id', payload.requestId)
+    .maybeSingle();
+  if (requestError || !request || request.student_id !== profile.id || request.status !== 'completed') return false;
+
+  const { error } = await supabase.from('session_feedback').insert({
+    request_id: payload.requestId,
+    student_id: profile.id,
+    mentor_id: request.mentor_id,
+    rating: payload.rating,
+    comment: payload.comment.trim().slice(0, 2000),
+  });
   return !error;
 }
 
