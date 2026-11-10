@@ -43,24 +43,33 @@ export async function getMentorshipRequests(): Promise<DbMentorshipRequest[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('mentorship_requests')
-    .select(`
-      *,
-      student_profile:student_id (
-        full_name,
-        uid_or_empid,
-        section,
-        course,
-        semester,
-        batch
-      )
-    `)
+    .select('*')
     .order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching mentorship requests from Supabase:', error);
     return [];
   }
-  return data || [];
+
+  const rows = data || [];
+  const studentIds = [...new Set(rows.map(row => row.student_id).filter(Boolean))] as string[];
+  if (studentIds.length === 0) return rows;
+
+  const { data: students, error: studentsError } = await supabase
+    .from('public_student_directory')
+    .select('id, full_name, uid_or_empid, section, course, semester, batch')
+    .in('id', studentIds);
+
+  if (studentsError) {
+    console.error('Unable to load the restricted student directory:', studentsError);
+    return rows;
+  }
+
+  const studentById = new Map((students || []).map(student => [student.id, student]));
+  return rows.map(row => ({
+    ...row,
+    student_profile: studentById.get(row.student_id) || undefined,
+  }));
 }
 
 // 2. Insert new student session request
